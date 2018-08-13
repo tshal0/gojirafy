@@ -3,15 +3,20 @@ package main
 import (
 	"crypto/rsa"
 	"crypto/x509"
+	_ "database/sql"
+
+	"app/db"
 	"encoding/pem"
 	"github.com/andygrunwald/go-jira"
 	"github.com/dghubble/oauth1"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
 	"golang.org/x/net/context"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"log"
 	"net/http"
 	"strings"
+	// "time"
 )
 
 var (
@@ -40,6 +45,14 @@ bu2xqxGzZOzCCyT6DIma9ZQ9tZHnkmpc+wmpdRfK9B4=
 
 const jiraConsumerKey = "gojirakey"
 
+var (
+	// key must be 16, 24 or 32 bytes long (AES-128, AES-192 or AES-256)
+	key   = []byte("super-secret-key")
+	store = sessions.NewCookieStore(key)
+)
+
+var dbContext *db.DB
+
 func handleJiraLogin(w http.ResponseWriter, r *http.Request) {
 	requestToken, requestSecret, err := config.RequestToken()
 	log.Println(requestSecret)
@@ -52,6 +65,9 @@ func handleJiraLogin(w http.ResponseWriter, r *http.Request) {
 }
 func handleJiraCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
+
+	// session, _ := store.Get(r, "cookie-name")
+
 	_, requestSecret, err := config.RequestToken()
 	if err != nil {
 		log.Fatal(err)
@@ -63,6 +79,16 @@ func handleJiraCallback(w http.ResponseWriter, r *http.Request) {
 	tok := oauth1.NewToken(accessToken, accessSecret)
 
 	client := config.Client(ctx, tok)
+	log.Println("DbContext:")
+	log.Println(dbContext)
+	env := &db.Env{Context: dbContext}
+
+	env.Context.SetAccessToken(1, accessToken)
+	// http.SetCookie(w, &http.Cookie{
+	// 	Name:    "session_token",
+	// 	Value:   tok,
+	// 	Expires: time.Now().Add(120 * time.Second),
+	// })
 
 	jiraClient, err := jira.NewClient(client, "http://localhost:8080")
 
@@ -115,8 +141,34 @@ var (
 	}
 )
 
+func handleRoot(w http.ResponseWriter, r *http.Request) {
+	// c, err := r.Cookie("session_token")
+	// if err != nil {
+	// 	if err == http.ErrNoCookie {
+	// 		w.WriteHeader(http.StatusUnauthorized)
+	// 		return
+	// 	}
+	// 	w.WriteHeader(http.StatusBadRequest)
+	// 	return
+	// }
+	// sessionToken := c.Value
+
+}
+
 func main() {
 
+	var err error
+	dbContext, err = db.InitDB("")
+	if err != nil {
+		log.Println(err.Error())
+	}
+	env := &db.Env{Context: dbContext}
+	log.Println("Get Users")
+	users, err := env.Context.Users()
+
+	for _, usr := range users {
+		log.Printf("%d | %s | \n", usr.UserID, usr.AccessToken)
+	}
 	r := mux.NewRouter()
 
 	r.HandleFunc("/", handleJiraLogin)
